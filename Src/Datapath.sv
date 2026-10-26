@@ -493,4 +493,5 @@ module Datapath (
         endcase
     end
 
+    test!!
 endmodule
