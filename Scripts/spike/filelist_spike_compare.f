@@ -1,0 +1,13 @@
+../../Src/Pkg/Cpu_h.sv
+../../Src/Alu.sv
+../../Src/Cpu.sv
+../../Src/Ctrlpath.sv
+../../Src/Datapath.sv
+../../Src/ImmExtend.sv
+../../Src/ProgramCounter.sv
+../../Src/RegisterFile.sv
+../../Src/Forwarding.sv
+../../Src/HazardUnit.sv
+../../Src/CsrRegisterFile.sv
+../../Src/CsrOperation.sv
+../../Testbench/tb_SpikeCompare.sv

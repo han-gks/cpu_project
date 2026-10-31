@@ -7,6 +7,7 @@
                       3) 2026.09.08 : Apply enum for selector
                       4) 2026.09.08 : Implement base type
                       5) 2026.09.10 : Implement variable step multi-cycle
+                      6) 2026.10.30 : Connect CSR control (Ctrlpath -> Datapath)
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -43,7 +44,15 @@ module Cpu (
     logic       wWrEn_Reg;  
     logic       wMemValid;
     logic       wMemWrEn;  
-    byte_sel_e  wMemByteSel;  
+    byte_sel_e  wMemByteSel;
+
+    // CSR Control Signals
+    csr_op_e    wCsrCtrl;
+    logic       wCsrEn;
+    logic       wCsrImmSel;
+    logic       wCsrRdEn;
+    logic       wCsrWrEn;
+    
 
     // Data Signals
     logic [31:0] wInstData;
@@ -64,6 +73,12 @@ module Cpu (
         .iMemValid  (wMemValid),
         .iMemWrEn   (wMemWrEn),
         .iMemByteSel(wMemByteSel),
+
+        .iCsrCtrl    (wCsrCtrl),
+        .iCsrEn      (wCsrEn),
+        .iCsrWrEn    (wCsrWrEn),
+        .iCsrRdEn    (wCsrRdEn),
+        .iCsrImmSel  (wCsrImmSel),
 
         .iInstData  (iInstData),
         .iMemRdData (iMemRdData),
@@ -91,7 +106,13 @@ module Cpu (
         .oMemWrEn   (wMemWrEn),  
         .oBranchEn  (wBranchEn),
         .oBranchCtrl(wBranchCtrl),
-        .oMemByteSel(wMemByteSel)
+        .oMemByteSel(wMemByteSel),
+
+        .oCsrCtrl   (wCsrCtrl),
+        .oCsrEn     (wCsrEn),
+        .oCsrWrEn   (wCsrWrEn),   
+        .oCsrRdEn   (wCsrRdEn),
+        .oCsrImmSel (wCsrImmSel)
     );
 
 endmodule

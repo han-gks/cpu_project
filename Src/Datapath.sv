@@ -10,6 +10,11 @@
                      11) 2026.09.10 : [Bug  FIX] Relocate Branch/Jump logic to EX stage
                      12) 2026.10.18 : Add Forwarding logic
                      13) 2026.10.19 : Add Hazard Detection logic
+                     14) 2026.10.30 : Add CSR path (Zicsr)
+                                      - CSR read/modify/write all in WB stage
+                                      - CSR ctrl/data carried through ID/EX, EX/MEM, MEM/WB
+                                      - CSR result written back to rd via WB_CSR
+                     15) 2026.10.31 : Add CSR remain logic
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -32,6 +37,13 @@ module Datapath (
     input  logic        iMemValid,
     input  logic        iMemWrEn,
     input  byte_sel_e   iMemByteSel,
+
+    // Input Ports: CSR Control (decoded in ID, used in WB)
+    input csr_op_e       iCsrCtrl,      // CSR operation : WRITE / SET / CLEAR
+    input logic          iCsrEn,        // CSR instruction valid
+    input logic          iCsrWrEn,      // CSR write enable
+    input logic          iCsrRdEn,      // CSR read enable
+    input logic          iCsrImmSel,    // 0 : rs1, 1 : zimm (CSRRxI)
 
     // Input Ports: Data
     input  logic [31:0] iInstData,
@@ -93,6 +105,15 @@ module Datapath (
     logic               rID_EX_MemWrEn;
     byte_sel_e          rID_EX_MemByteSel;
 
+    // ID -> EX Registers: CSR
+    logic [11:0]        rID_EX_CsrAddr;
+    csr_op_e            rID_EX_CsrCtrl;
+    logic               rID_EX_CsrEn;
+    logic               rID_EX_CsrWrEn;
+    logic               rID_EX_CsrRdEn;
+    logic               rID_EX_CsrImmSel;
+
+
     // EX Stage
     logic [31:0]        wAluRs1;
     logic [31:0]        wAluRs2; 
@@ -121,6 +142,16 @@ module Datapath (
     logic               rEX_MEM_MemWrEn;
     byte_sel_e          rEX_MEM_MemByteSel;
 
+    // EX -> MEM Registers: CSR
+    logic [31:0]       rEX_MEM_CsrSrc;  // forwarded rs1 value for CSR operation
+    logic [31:0]       rEX_MEM_Imm;     // zimm (IMM_Z) for CSRRxI
+    logic [11:0]       rEX_MEM_CsrAddr;
+    csr_op_e           rEX_MEM_CsrCtrl;
+    logic              rEX_MEM_CsrEn;
+    logic              rEX_MEM_CsrWrEn;
+    logic              rEX_MEM_CsrRdEn;
+    logic              rEX_MEM_CsrImmSel;
+
     // MEM -> WB Registers
     logic [31:0]        rMEM_WB_AluData;
     logic [31:0]        rMEM_WB_MemRdData;
@@ -130,9 +161,22 @@ module Datapath (
     logic               rMEM_WB_WrEn_Reg;
     wb_sel_e            rMEM_WB_WBSel;
 
+    // MEM -> WB Registers: CSR
+    logic [31:0]        rMEM_WB_CsrSrc;
+    logic [31:0]        rMEM_WB_Imm;
+    logic [11:0]        rMEM_WB_CsrAddr;
+    csr_op_e            rMEM_WB_CsrCtrl;
+    logic               rMEM_WB_CsrEn;
+    logic               rMEM_WB_CsrWrEn;
+    logic               rMEM_WB_CsrRdEn;
+    logic               rMEM_WB_CsrImmSel;
+
     // WB Stage
     logic [31:0]        wWrData_Reg;
 
+    // WB Stage: CSR
+    logic [31:0]        wCsrRdData;         // old CSR value -> rd
+    logic [31:0]        wCsrWrData;         // CSR operation result -> CSR register
 
     /***********************************************
     // IF Stage
@@ -209,7 +253,11 @@ module Datapath (
         .iID_EX_Rd      (rID_EX_Rd),    
 
         .iTakeBranch    (wTakeBranch),
-        .iID_EX_WBSel   (rID_EX_WBSel),    
+        .iID_EX_WBSel   (rID_EX_WBSel),
+
+        .iID_EX_CsrEn   (rID_EX_CsrEn),
+        .iEX_MEM_CsrEn  (rEX_MEM_CsrEn),
+        .iMEM_WB_CsrEn  (rMEM_WB_CsrEn),
 
         .oIF_ID_Stall   (wIF_ID_Stall),
         .oIF_ID_Flush   (wIF_ID_Flush),
@@ -243,7 +291,14 @@ module Datapath (
             rID_EX_MemValid   <= 1'b0;
             rID_EX_MemWrEn    <= 1'b0;
             rID_EX_MemByteSel <= WORD;
-        end 
+            // Csr
+            rID_EX_CsrAddr     <= 12'b0;
+            rID_EX_CsrCtrl     <= CSR_WRITE;    // don't care while CsrWrEn = 0
+            rID_EX_CsrEn       <= 1'b0;
+            rID_EX_CsrWrEn     <= 1'b0;
+            rID_EX_CsrRdEn     <= 1'b0;
+            rID_EX_CsrImmSel   <= 1'b0;
+        end
         else if (wID_EX_Flush)
         begin
             rID_EX_Rs1        <= 32'b0;
@@ -265,6 +320,13 @@ module Datapath (
             rID_EX_MemValid   <= 1'b0;
             rID_EX_MemWrEn    <= 1'b0;
             rID_EX_MemByteSel <= WORD;
+            // Csr : flushed CSR instruction never writes CSR (no speculative CSR write)
+            rID_EX_CsrAddr     <= 12'b0;
+            rID_EX_CsrCtrl     <= CSR_WRITE;
+            rID_EX_CsrEn       <= 1'b0;
+            rID_EX_CsrWrEn     <= 1'b0;
+            rID_EX_CsrRdEn     <= 1'b0;
+            rID_EX_CsrImmSel   <= 1'b0;
         end
         else 
         begin
@@ -289,6 +351,13 @@ module Datapath (
             rID_EX_MemValid   <= iMemValid;
             rID_EX_MemWrEn    <= iMemWrEn;
             rID_EX_MemByteSel <= iMemByteSel;
+            // Csr
+            rID_EX_CsrAddr     <= rIF_ID_InstData[31:20];   // csr field of instruction
+            rID_EX_CsrCtrl     <= iCsrCtrl;
+            rID_EX_CsrEn       <= iCsrEn;
+            rID_EX_CsrWrEn     <= iCsrWrEn;
+            rID_EX_CsrRdEn     <= iCsrRdEn;
+            rID_EX_CsrImmSel   <= iCsrImmSel;
         end                      
     end
 
@@ -425,6 +494,15 @@ module Datapath (
             rEX_MEM_MemValid   <= 1'b0;
             rEX_MEM_MemWrEn    <= 1'b0;
             rEX_MEM_MemByteSel <= WORD;
+            // Csr
+            rEX_MEM_CsrCtrl     <= CSR_WRITE;
+            rEX_MEM_CsrAddr     <= 12'b0;
+            rEX_MEM_CsrEn       <= 1'b0;
+            rEX_MEM_CsrWrEn     <= 1'b0;
+            rEX_MEM_CsrRdEn     <= 1'b0;
+            rEX_MEM_CsrImmSel   <= 1'b0;
+            rEX_MEM_Imm         <= 32'b0; 
+            rEX_MEM_CsrSrc      <= 32'b0;     
         end 
         else 
         begin
@@ -439,6 +517,15 @@ module Datapath (
             rEX_MEM_MemValid   <= rID_EX_MemValid;
             rEX_MEM_MemWrEn    <= rID_EX_MemWrEn;
             rEX_MEM_MemByteSel <= rID_EX_MemByteSel;
+            // Csr : carried to WB only (no CSR operation before WB)
+            rEX_MEM_CsrAddr     <= rID_EX_CsrAddr;
+            rEX_MEM_CsrCtrl     <= rID_EX_CsrCtrl;              
+            rEX_MEM_CsrEn       <= rID_EX_CsrEn;              
+            rEX_MEM_CsrWrEn     <= rID_EX_CsrWrEn;            
+            rEX_MEM_CsrRdEn     <= rID_EX_CsrRdEn;          
+            rEX_MEM_CsrImmSel   <= rID_EX_CsrImmSel; 
+            rEX_MEM_CsrSrc      <= wAluRs1_Fwd;   // CSR-only path: forwarded rs1 (not ALU input), used in WB
+            rEX_MEM_Imm         <= rID_EX_Imm;    // zimm from ImmExtend (IMM_Z)
         end
     end
    
@@ -466,7 +553,16 @@ module Datapath (
             // Ctrl
             rMEM_WB_WrEn_Reg  <= 1'b0;
             rMEM_WB_WBSel     <= WB_ALU;
-        end 
+            // Csr
+            rMEM_WB_CsrCtrl     <= CSR_WRITE;
+            rMEM_WB_CsrAddr     <= 12'b0;
+            rMEM_WB_CsrEn       <= 1'b0;
+            rMEM_WB_CsrWrEn     <= 1'b0;
+            rMEM_WB_CsrRdEn     <= 1'b0;
+            rMEM_WB_CsrImmSel   <= 1'b0;
+            rMEM_WB_CsrSrc      <= 32'b0;
+            rMEM_WB_Imm         <= 32'b0;
+      end 
         else 
         begin
             // Data
@@ -477,6 +573,16 @@ module Datapath (
             // Ctrl
             rMEM_WB_WrEn_Reg  <= rEX_MEM_WrEn_Reg;
             rMEM_WB_WBSel     <= rEX_MEM_WBSel; 
+            // Csr
+            rMEM_WB_CsrAddr     <= rEX_MEM_CsrAddr;
+            rMEM_WB_CsrCtrl     <= rEX_MEM_CsrCtrl;              
+            rMEM_WB_CsrEn       <= rEX_MEM_CsrEn;              
+            rMEM_WB_CsrWrEn     <= rEX_MEM_CsrWrEn;            
+            rMEM_WB_CsrRdEn     <= rEX_MEM_CsrRdEn;          
+            rMEM_WB_CsrImmSel   <= rEX_MEM_CsrImmSel; 
+            rMEM_WB_Imm         <= rEX_MEM_Imm;
+            rMEM_WB_CsrSrc      <= rEX_MEM_CsrSrc;
+
         end
     end
 
@@ -488,9 +594,32 @@ module Datapath (
         case (rMEM_WB_WBSel)
             WB_ALU : wWrData_Reg = rMEM_WB_AluData;
             WB_MEM : wWrData_Reg = rMEM_WB_MemRdData;
-            WB_PC4 : wWrData_Reg = rMEM_WB_PCPlus4;  
+            WB_PC4 : wWrData_Reg = rMEM_WB_PCPlus4; 
+            WB_CSR : wWrData_Reg = wCsrRdData;      // old CSR value -> rd (also MEM/WB forwarding source)
             default: wWrData_Reg = rMEM_WB_AluData;
         endcase
     end
+
+    // CSR read (comb) -> CsrOperation -> CSR write (posedge), all in WB stage
+    // Back-to-back CSR instructions need no bypass: the next one reads in the next cycle
+    CsrRegisterFile U_csrregisterfile (
+        .iClk       (iClk),
+        .iRsn       (iRsn),
+        .iCsrWrEn   (rMEM_WB_CsrWrEn),
+        .iCsrRdEn   (rMEM_WB_CsrRdEn),
+        .iCsrAddr   (rMEM_WB_CsrAddr),
+        .iCsrWrData (wCsrWrData),
+        .oCsrRdData (wCsrRdData)
+    );
+
+    CsrOperation U_csroperation (
+        .iCsrOp     (rMEM_WB_CsrCtrl),
+        .iCsrImmSel (rMEM_WB_CsrImmSel),
+        .iCsrData   (wCsrRdData),           // old CSR value
+        .iRs1Data   (rMEM_WB_CsrSrc),       // forwarded rs1
+        .iZimm      (rMEM_WB_Imm[4:0]),     // zimm
+        .oCsrData   (wCsrWrData)
+    );
+
 
 endmodule

@@ -1,8 +1,9 @@
 /**************************************************************
- - Project          : 20260902_CPU
+ - Project          : CPU_OS
  - File name        : Cpu_h.sv
  - Description      : Common types and enums for CPU
  - Owner            : Daegyu.Han
+ - Revision history : 1) 2026.10.31 : Add CSR enum
 **************************************************************/
 `timescale 1ns / 1ps
 
@@ -18,7 +19,8 @@ package Cpu_h;
         OP_LUI      = 7'b011_0111, // U-Type (lui)
         OP_BRANCH   = 7'b110_0011, // B-Type (beq, bne, etc.)
         OP_JALR     = 7'b110_0111, // I-Type (jalr)
-        OP_JAL      = 7'b110_1111  // J-Type (jal)
+        OP_JAL      = 7'b110_1111, // J-Type (jal)
+        OP_SYSTEM   = 7'b111_0011  // SYSTEM (CSR, ecall, mret)
         //OP_SYSTEM = 7'b111_0011  // SYSTEM (csr, ecall, mret 등)
     } opcode_e;
 
@@ -53,8 +55,16 @@ package Cpu_h;
     typedef enum logic [1:0] {
         WB_ALU = 2'b00,
         WB_MEM = 2'b01,
-        WB_PC4 = 2'b10
+        WB_PC4 = 2'b10,
+        WB_CSR = 2'b11
     } wb_sel_e;
+
+    // CSR operation
+    typedef enum logic [1:0] {
+        CSR_WRITE = 2'b00,
+        CSR_SET   = 2'b01,
+        CSR_CLEAR = 2'b10
+    } csr_op_e;
 
     // 6. PC Select
     typedef enum logic [1:0] {

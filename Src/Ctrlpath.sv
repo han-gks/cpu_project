@@ -6,6 +6,8 @@
  - Revision history : 1) 2026.09.02 : Initial release
                       4) 2026.09.08 : Apply enum for selector
                       6) 2026.09.09 : Complete base opcode
+                      7) 2026.10.30 : Add CSR decode (OP_SYSTEM : CSRRW/S/C, CSRRWI/SI/CI)
+                      8) 2026.10.31 : Add CSR enum
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;  
@@ -26,15 +28,28 @@ module Ctrlpath (
     output logic        oWrEn_Reg,
     output logic        oBranchEn,
     output branch_op_e  oBranchCtrl,
-    output byte_sel_e   oMemByteSel
+    output byte_sel_e   oMemByteSel,
+    // Output Ports: CSR Control
+    output csr_op_e     oCsrCtrl,       // CSR operation : WRITE / SET / CLEAR
+    output logic        oCsrEn,         // CSR instruction valid
+    output logic        oCsrWrEn,       // CSR write enable
+    output logic        oCsrRdEn,       // CSR read enable (guard against read side effects)
+    output logic        oCsrImmSel      // 0 : rs1, 1 : zimm
 );
 
 
-    logic [2:0] Func3;
-    logic [6:0] Func7;
+    logic [2:0]     Func3;
+    logic [6:0]     Func7;
+    logic [4:0]     Rd;
+    logic [4:0]     Rs;
+    logic [4:0]     Imm;
 
     assign Func3 = iInstData[14:12];
     assign Func7 = iInstData[31:25];
+    assign Rd    = iInstData[11:7];
+    assign Rs    = iInstData[19:15];    // rs1 or zimm (same field)
+
+
 
     always_comb
     begin
@@ -49,7 +64,14 @@ module Ctrlpath (
         oWrEn_Reg  = 1'b0;
         oBranchEn   = 1'b0;
         oBranchCtrl = BR_EQ;
-        oMemByteSel = WORD; 
+        oMemByteSel = WORD;
+        // CSR defaults (avoid latch for non-SYSTEM opcodes)
+        oCsrCtrl    = CSR_WRITE;
+        oCsrEn      = 1'b0;
+        oCsrWrEn    = 1'b0;
+        oCsrRdEn    = 1'b0;
+        oCsrImmSel  = 1'b0;
+        oWrEn_Reg   = 1'b0;
 
         case(opcode_e'(iInstData[6:0]))
             OP_OP       :           // R type
@@ -265,7 +287,43 @@ module Ctrlpath (
             begin
             end
 
+            OP_SYSTEM       :       // CSR instructions (ECALL/EBREAK/MRET : TBD)
+            begin
+                oImmCtrl   = IMM_Z;         // zimm for CSRRxI (unused for CSRRx)
+                oCsrImmSel = Func3[2];      // funct3[2] = 1 : immediate version
+
+                // All CSR instructions write old CSR value to rd in WB (rd = x0 is ignored by RegFile)
+                case(Func3)
+                    3'b001, 3'b101 :        // CSRRW / CSRRWI : read only if rd != x0
+                    begin
+                        oCsrCtrl    = CSR_WRITE;
+                        oWBSel      = WB_CSR;
+                        oCsrEn      = 1'b1;
+                        oCsrWrEn    = 1'b1;
+                        oCsrRdEn    = (Rd != 5'b0);
+                        oWrEn_Reg   = 1'b1;
+                    end 
+                    3'b010, 3'b110 :        // CSRRS / CSRRSI : write only if rs1/zimm != 0
+                    begin
+                        oCsrCtrl    = CSR_SET;
+                        oWBSel      = WB_CSR;
+                        oCsrEn      = 1'b1;
+                        oCsrWrEn    = (Rs != 5'b0);
+                        oCsrRdEn    = 1'b1;
+                        oWrEn_Reg   = 1'b1;
+                    end
+                    3'b011, 3'b111 :        // CSRRC / CSRRCI : write only if rs1/zimm != 0
+                    begin
+                        oCsrCtrl    = CSR_CLEAR;
+                        oWBSel      = WB_CSR;
+                        oCsrEn      = 1'b1;
+                        oCsrWrEn    = (Rs != 5'b0);
+                        oCsrRdEn    = 1'b1;
+                        oWrEn_Reg   = 1'b1;
+                    end
+                    default : ;             // funct3 = 000 (ECALL/EBREAK/MRET), 100 : not implemented
+                endcase
+            end
         endcase
     end
-
 endmodule

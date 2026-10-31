@@ -34,7 +34,10 @@ module tb_Top_CPU;
 
         #50000;
 
-        $display("Simulation Finished.");
+        if (u_Top_CPU.u_cpu.u_datapath.u_registerfile.rMem[31] !== 32'd0)
+            $fatal(1, "FAIL: x31=%h", u_Top_CPU.u_cpu.u_datapath.u_registerfile.rMem[31]);
+
+        $display("PASS: x31=0");
         $finish;
     end
 

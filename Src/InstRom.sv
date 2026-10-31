@@ -7,7 +7,10 @@
 **************************************************************/
 `timescale 1ns / 1ps
 
-module InstRom (
+module InstRom #(
+    parameter integer ROM_WORDS = 1024,
+    parameter ROM_FILE = "../../Src/code/rom_code_CSR.hex"
+) (
     // Input Ports: Data
     input  logic [31:0] iInstAddr,
 
@@ -15,13 +18,13 @@ module InstRom (
     output logic [31:0] oInstData
 );
 
-    logic [31:0] rInstRom [0:127];
+    logic [31:0] rInstRom [0:ROM_WORDS-1];
 
     initial
     begin
-        //$readmemh("../../Src/code/rom_code_ALL.hex", rInstRom);
+        $readmemh(ROM_FILE, rInstRom);
         // for test
-        $readmemh("./code/rom_code_ALL.hex", rInstRom);
+        //$readmemh("./code/rom_code_CSR.hex", rInstRom);
         //rInstRom[0]  = 32'hfe01_0113;
         //rInstRom[1]  = 32'h0011_2e23;
         //rInstRom[2]  = 32'h0081_2c23;
