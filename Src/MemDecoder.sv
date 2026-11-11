@@ -6,6 +6,7 @@
                       - Other Addresses           : APB Master (Bus Path)
  - Owner            : Daegyu.Han
  - Revision history : 1) 2026.11.11 : Initial release
+                      2) 2026.11.11 : Add oBusStall output for multi-cycle APB access
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -18,6 +19,7 @@ module MemDecoder (
     input  logic [31:0] iMemAddr,
     input  logic [31:0] iMemWrData,
     output logic [31:0] oMemRdData,
+    output logic        oBusStall,
 
     // DataMem Bypass Interface (0x8000_0000)
     output logic        oDmemWrEn,
@@ -54,7 +56,7 @@ module MemDecoder (
     assign oDmemWrData  = iMemWrData;
 
     // -------------------------------------------------------------------------
-    // 3. APB Master Request Path
+    // 3. APB Master Request Path & Bus Stall Generation
     // -------------------------------------------------------------------------
     logic [3:0] wReqWrStrb;
 
@@ -89,6 +91,9 @@ module MemDecoder (
     assign oReqWrite  = iMemWrEn;
     assign oReqWrData = iMemWrData;
     assign oReqWrStrb = wReqWrStrb;
+
+    // Hold pipeline while APB request is in progress until response completes
+    assign oBusStall  = oReqValid && !iRspValid;
 
     // -------------------------------------------------------------------------
     // 4. Read Data Multiplexer (To CPU)

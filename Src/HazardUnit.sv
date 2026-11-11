@@ -1,12 +1,13 @@
 /**************************************************************
  - Project          : CPU_OS
  - File name        : HazardUnit.sv
- - Description      : 
+ - Description      : Pipeline Hazard Detection & Stall/Flush Control
  - Owner            : Daegyu.Han
  - Revision history : 1) 2026.10.19 : Initial release
                       2) 2026.10.30 : Add CSR-use stall (WB_CSR, same as load-use)
                       3) 2026.10.31 : Add CSR stall/flush logic(CSR only in pipline)
                       4) 2026.11.11 : Add Trap flush logic
+                      5) 2026.11.11 : Add APB Bus wait-state stall (iBusStall)
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -23,12 +24,19 @@ module HazardUnit (
     input  logic        iTakeBranch,
     input  logic [1:0]  iID_EX_WBSel,      // check Load (WB_MEM) / CSR (WB_CSR)
 
+    // APB Bus Wait-State Stall
+    input  logic        iBusStall,
+
     // Trap Controller Ports
     input  logic [3:0]  iTrapFlush,        // Flush mask: [3:0] = {IF_ID, ID_EX, EX_MEM, MEM_WB}
     input  logic        iTrapDrain,        // Pipeline drain request
     input  logic        iTrapBranch,       // Trap jump
 
     output logic        oIF_ID_Stall,
+    output logic        oID_EX_Stall,
+    output logic        oEX_MEM_Stall,
+    output logic        oMEM_WB_Stall,
+
     output logic        oIF_ID_Flush,
     output logic        oID_EX_Flush,
     output logic        oEX_MEM_Flush,
@@ -48,10 +56,14 @@ module HazardUnit (
                             (iEX_MEM_CsrEn == 1'b1) ||
                             (iMEM_WB_CsrEn == 1'b1)   ) ? 1'b1 : 1'b0;
 
-    // Priority: TrapBranch > TrapFlush > Branch > Load-Use > CSR Stall / Trap Drain
+    // Priority: TrapBranch > BusStall > TrapFlush > Branch > Load-Use > CSR Stall / Trap Drain
     always_comb
     begin
         oIF_ID_Stall  = 1'b0;
+        oID_EX_Stall  = 1'b0;
+        oEX_MEM_Stall = 1'b0;
+        oMEM_WB_Stall = 1'b0;
+
         oIF_ID_Flush  = 1'b0;
         oID_EX_Flush  = 1'b0;
         oEX_MEM_Flush = 1'b0;
@@ -64,6 +76,14 @@ module HazardUnit (
             oID_EX_Flush  = iTrapFlush[2];
             oEX_MEM_Flush = iTrapFlush[1];
             oMEM_WB_Flush = iTrapFlush[0];
+        end
+        else if (iBusStall == 1'b1)
+        begin
+            oPC_Stall     = 1'b1;
+            oIF_ID_Stall  = 1'b1;
+            oID_EX_Stall  = 1'b1;
+            oEX_MEM_Stall = 1'b1;
+            oMEM_WB_Stall = 1'b1;
         end
         else if (iTrapFlush != 4'b0000)
         begin
@@ -91,6 +111,4 @@ module HazardUnit (
         end
     end
 
-
 endmodule
-

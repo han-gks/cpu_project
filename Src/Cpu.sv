@@ -9,6 +9,7 @@
                       5) 2026.09.10 : Implement variable step multi-cycle
                       6) 2026.10.30 : Connect CSR control (Ctrlpath -> Datapath)
                       7) 2026.11.11 : Connect Trap decode & external interrupt (MIP) ports
+                      8) 2026.11.11 : Add iBusStall port for APB wait-state stall
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -22,6 +23,9 @@ module Cpu (
     input  logic        iMip_MEIP,
     input  logic        iMip_MTIP,
     input  logic        iMip_MSIP,
+
+    // Input Ports: Bus Wait-State Stall
+    input  logic        iBusStall,
 
     // Input Ports: Data
     input  logic [31:0] iInstData,
@@ -97,6 +101,8 @@ module Cpu (
         .iMip_MEIP       (iMip_MEIP),
         .iMip_MTIP       (iMip_MTIP),
         .iMip_MSIP       (iMip_MSIP),
+
+        .iBusStall       (iBusStall),
 
         .iInstData       (iInstData),
         .iMemRdData      (iMemRdData),

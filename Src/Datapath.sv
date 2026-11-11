@@ -14,6 +14,7 @@
                      15) 2026.10.31 : Add CSR remain logic
                      16) 2026.11.08 : Add WB trap metadata, trap-handler interfaces
                      17) 2026.11.11 : Integrate TrapController, 4-stage Valid/Flush, and CSR Trap ports
+                     18) 2026.11.11 : Add APB Bus wait-state stall (iBusStall) support
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -54,6 +55,9 @@ module Datapath (
     input  logic                iMip_MTIP,
     input  logic                iMip_MSIP,
 
+    // Input Ports: Bus Wait-State Stall (from MemDecoder)
+    input  logic                iBusStall,
+
     // Input Ports: Data
     input  logic [31:0]         iInstData,
     input  logic [31:0]         iMemRdData,
@@ -78,6 +82,9 @@ module Datapath (
     logic [31:0]        wPcPlus4;
     logic               wBranchCond;
     logic               wIF_ID_Stall;
+    logic               wID_EX_Stall;
+    logic               wEX_MEM_Stall;
+    logic               wMEM_WB_Stall;
     logic               wIF_ID_Flush;
     logic               wID_EX_Flush;
     logic               wEX_MEM_Flush;
@@ -312,11 +319,16 @@ module Datapath (
         .iTakeBranch    (wTakeBranch),
         .iID_EX_WBSel   (rID_EX_WBSel),
 
+        .iBusStall      (iBusStall),
+
         .iTrapFlush     (wTrapFlush),
         .iTrapDrain     (wTrapDrain),
         .iTrapBranch    (wTrapBranch),
 
         .oIF_ID_Stall   (wIF_ID_Stall),
+        .oID_EX_Stall   (wID_EX_Stall),
+        .oEX_MEM_Stall  (wEX_MEM_Stall),
+        .oMEM_WB_Stall  (wMEM_WB_Stall),
         .oIF_ID_Flush   (wIF_ID_Flush),
         .oID_EX_Flush   (wID_EX_Flush),
         .oEX_MEM_Flush  (wEX_MEM_Flush),
@@ -395,7 +407,7 @@ module Datapath (
             rID_EX_Exc        <= 1'b0;
             rID_EX_Cause      <= EXC_INST_ADDR_MISALIGNED;
         end
-        else 
+        else if (!wID_EX_Stall)
         begin
             // Data
             rID_EX_Rs1        <= wRdData1;
@@ -600,7 +612,7 @@ module Datapath (
             rEX_MEM_Exc        <= 1'b0;
             rEX_MEM_Cause      <= EXC_INST_ADDR_MISALIGNED;
         end
-        else 
+        else if (!wEX_MEM_Stall)
         begin
             // Data
             rEX_MEM_AluData    <= wAluData;
@@ -635,7 +647,7 @@ module Datapath (
     ***********************************************/
     assign oMemAddr    = rEX_MEM_AluData;
     assign oMemWrData  = rEX_MEM_RdData2;
-    assign oMemValid   = rEX_MEM_MemValid;
+    assign oMemValid   = rEX_MEM_MemValid && !wTrapBranch;
     assign oMemWrEn    = oMemValid && rEX_MEM_MemWrEn;
     assign oMemByteSel = rEX_MEM_MemByteSel;
 
@@ -691,7 +703,7 @@ module Datapath (
             rMEM_WB_Exc       <= 1'b0;
             rMEM_WB_Cause     <= EXC_INST_ADDR_MISALIGNED;
         end
-        else 
+        else if (!wMEM_WB_Stall)
         begin
             // Data
             rMEM_WB_AluData   <= rEX_MEM_AluData;

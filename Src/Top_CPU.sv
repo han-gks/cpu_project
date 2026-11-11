@@ -14,6 +14,7 @@
                       2) 2026.09.03 : Add DataMem instance
                       3) 2026.11.11 : Integrate MemDecoder, Apb_Master,
                                       Apb_Interconnect, Clint, and Plic
+                      4) 2026.11.11 : Connect wBusStall between MemDecoder and Cpu
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -45,6 +46,7 @@ module Top_CPU (
     logic [31:0] wCpuMemAddr;
     logic [31:0] wCpuMemWrData;
     logic [31:0] wCpuMemRdData;
+    logic        wBusStall;
 
     // -------------------------------------------------------------------------
     // 3. Interrupt Pending Wires (CLINT & PLIC -> CPU)
@@ -133,6 +135,8 @@ module Top_CPU (
         .iMip_MTIP   (wMip_MTIP),
         .iMip_MSIP   (wMip_MSIP),
 
+        .iBusStall   (wBusStall),
+
         .iInstData   (wInstData),
         .iMemRdData  (wCpuMemRdData),
 
@@ -153,6 +157,7 @@ module Top_CPU (
         .iMemAddr    (wCpuMemAddr),
         .iMemWrData  (wCpuMemWrData),
         .oMemRdData  (wCpuMemRdData),
+        .oBusStall   (wBusStall),
 
         // DataMem Bypass Side (0x8000_0000)
         .oDmemWrEn    (wDmemWrEn),
