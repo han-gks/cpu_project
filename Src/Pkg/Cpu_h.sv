@@ -4,6 +4,7 @@
  - Description      : Common types and enums for CPU
  - Owner            : Daegyu.Han
  - Revision history : 1) 2026.10.31 : Add CSR enum
+                      2) 2026.11.11 : Add exception_cause_e for TrapController
 **************************************************************/
 `timescale 1ns / 1ps
 
@@ -103,5 +104,18 @@ package Cpu_h;
         BYTE_U = 3'b100,
         HALF_U = 3'b101
     } byte_sel_e;
+
+    // 10. Exception Cause Code (mcause[3:0] for synchronous exceptions)
+    typedef enum logic [3:0] {
+        EXC_INST_ADDR_MISALIGNED  = 4'd0,
+        EXC_INST_ACCESS_FAULT     = 4'd1,
+        EXC_ILLEGAL_INST          = 4'd2,
+        EXC_BREAKPOINT            = 4'd3,
+        EXC_LOAD_ADDR_MISALIGNED  = 4'd4,
+        EXC_LOAD_ACCESS_FAULT     = 4'd5,
+        EXC_STORE_ADDR_MISALIGNED = 4'd6,
+        EXC_STORE_ACCESS_FAULT    = 4'd7,
+        EXC_ECALL_M               = 4'd11
+    } exception_cause_e;
 
 endpackage

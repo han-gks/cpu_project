@@ -9,7 +9,7 @@
 
 module InstRom #(
     parameter integer ROM_WORDS = 1024,
-    parameter ROM_FILE = "../../Src/code/rom_code_CSR.hex"
+    parameter ROM_FILE = "C:/__Project/CPU_OS/Src/code/rom_code_TRAP.hex"
 ) (
     // Input Ports: Data
     input  logic [31:0] iInstAddr,

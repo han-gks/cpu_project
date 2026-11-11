@@ -8,6 +8,7 @@
                       5) 2026.09.09 : Complete base opcode
                       7) 2026.09.10 : [Bug  FIX] Relocate Branch/Jump logic to EX stage
                       8) 2026.09.10 : Add Stall logic
+                      9) 2026.11.11 : Add Trap branch logic
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -17,6 +18,10 @@ module ProgramCounter (
     input  logic        iClk,
     input  logic        iRsn,
     input  logic        iStall,
+
+    // Input Ports: Trap Control
+    input  logic        iTrapBranch,
+    input  logic [31:0] iTrapAddr,
 
     // Input Ports: Control
     input  pc_sel_e     iPcSel,
@@ -39,12 +44,20 @@ module ProgramCounter (
     always_comb
     begin
         wPcNext = oPcPlus4;
-        case(iPcSel)
-            PC_BRANCH: wPcNext = (iBchSel) ? iBranchTarget : oPcPlus4;
-            PC_JAL   : wPcNext = iBranchTarget;
-            PC_JALR  : wPcNext = {iJalrAddr[31:1], 1'b0};
-            default  : wPcNext = oPcPlus4;
-        endcase
+
+        if (iTrapBranch)
+        begin
+            wPcNext = iTrapAddr;
+        end
+        else
+        begin
+            case(iPcSel)
+                PC_BRANCH: wPcNext = (iBchSel) ? iBranchTarget : oPcPlus4;
+                PC_JAL   : wPcNext = iBranchTarget;
+                PC_JALR  : wPcNext = {iJalrAddr[31:1], 1'b0};
+                default  : wPcNext = oPcPlus4;
+            endcase
+        end
     end
 
     always_ff @(posedge iClk or negedge iRsn)
@@ -52,6 +65,10 @@ module ProgramCounter (
         if (!iRsn)
         begin
             rMem_PC <= 32'b0;
+        end
+        else if (iTrapBranch)
+        begin
+            rMem_PC <= wPcNext;
         end
         else if (!iStall)
         begin
