@@ -1,0 +1,27 @@
+브랜치
+- 브랜치 발생 신호 시
+if/id id/mem 플러시
+pc는 pc+n으로 동작하므로 영향x
+
+로드 유즈
+- 로드 신호 발생시
+- 로드rd가 후속 명령어 rs와 같을때
+1사이클?
+2사이클? - mem에 다녀온 이후는 mem/wb에서 2사이클 포워딩으로 진행
+pc 스톨 필요
+
+[Bug]
+-before
+consumer sourcer : ID_EX
+producer source : EX_MEM
+-문제
+스톨/플러시가 한클락 뒤에 동작
+-원인
+포워딩과 동일하게 1사이클을 고려해야하기 때문에 source 간에도 1사이클을 둠(맞는 판단 - 그러나 타이밍을 오해)
+포워딩은 EX 기준으로 EX에 사용할 source를 ex 이후에서 가져와야 함
+반면 스톨/플러시는  EX에 후속 명령어가 진입 못하게 해야함
+-해결
+consumer sourcer : IF_ID
+producer source : ID_EX
+
+ 
