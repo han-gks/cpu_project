@@ -1,7 +1,17 @@
+/**************************************************************
+ - Project          : CPU_OS
+ - File name        : DataMem.sv
+ - Description      : Data Memory (16KB = 4096 Words @ 0x8000_0000)
+ - Owner            : Daegyu.Han
+ - Revision history : 1) 2026.09.03 : Initial release (128 Words)
+                      2) 2026.11.11 : Expand MEM_WORDS to 4096 (16KB) for FreeRTOS
+**************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
 
-module DataMem (
+module DataMem #(
+    parameter integer MEM_WORDS = 4096
+) (
     // Input Ports: Clock
     input  logic        iClk,
 
@@ -17,15 +27,17 @@ module DataMem (
     output logic [31:0] oMemRdData
 );
 
-    logic [31:0] rMem [0:127];
+    localparam integer ADDR_BITS = $clog2(MEM_WORDS);
+
+    logic [31:0] rMem [0:MEM_WORDS-1];
 
     // wire & reg declaration
-    logic [ 3:0] wByteEn;          // Make byte write enable from iMemAddr
-    logic [ 6:0] wWordAddr;        // Make SRAM address from iMemAddr
-    logic [31:0] wBroadcastWrData; // Make concatenated data from iMemWrData
-    logic [31:0] wRdWord;
-    logic [ 7:0] wRdByte;
-    logic [15:0] wRdHalf;
+    logic [ 3:0]          wByteEn;          // Make byte write enable from iMemAddr
+    logic [ADDR_BITS-1:0] wWordAddr;        // Make SRAM address from iMemAddr
+    logic [31:0]          wBroadcastWrData; // Make concatenated data from iMemWrData
+    logic [31:0]          wRdWord;
+    logic [ 7:0]          wRdByte;
+    logic [15:0]          wRdHalf;
 
     /*************************************************************************
     // Wire assign combinational logic
@@ -72,7 +84,7 @@ module DataMem (
     end
 
     // 3. Address Mapping
-    assign wWordAddr = iMemAddr[8:2];
+    assign wWordAddr = iMemAddr[ADDR_BITS+1:2];
 
     /****************************************************************************
     // Memory Write Operation

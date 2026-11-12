@@ -16,6 +16,10 @@ module tb_Top_CPU;
     logic iClk;
     logic iRsn;
     logic wDummyLed;
+    logic [7:0] wGpiCtrl;
+    logic [7:0] wGpoLed;
+    wire  [7:0] wGpioLedSw;
+    logic       wUartTx;
 
     // Testbench interrupt stimulus signals
     logic rTb_MEIP;
@@ -23,10 +27,16 @@ module tb_Top_CPU;
     logic rTb_MSIP;
 
     Top_CPU u_Top_CPU (
-        .iClk      (iClk),
-        .iRsn      (iRsn),
-        .iIrq      (4'b0000),
-        .oDummyLed (wDummyLed)
+        .iClk        (iClk),
+        .iRsn        (iRsn),
+        .iBtnIrq     (1'b0),
+        .iGpiData    (8'h00),
+        .oGpiCtrl    (wGpiCtrl),
+        .oGpoLed     (wGpoLed),
+        .ioGpioLedSw (wGpioLedSw),
+        .iUartRx     (1'b1),
+        .oUartTx     (wUartTx),
+        .oDummyLed   (wDummyLed)
     );
 
     // 100MHz Clock (10ns period)
