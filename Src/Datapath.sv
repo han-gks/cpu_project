@@ -17,6 +17,7 @@
                      18) 2026.11.11 : Add APB Bus wait-state stall (iBusStall) support
                      19) 2026.11.16 : Optimize pipeline Flush/Stall structure (decouple Flush from CE & data payload) for STA
                      20) 2026.11.16 : Connect forwarded operands (wAluRs1/2_Fwd) directly to ALU branch comparator for STA
+                     21) 2026.11.16 : Separate JALR target adder (wJalrTarget) and pre-gate ID control signals for STA
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -103,6 +104,16 @@ module Datapath (
     logic [31:0]        wRdData1;
     logic [31:0]        wRdData2;
     logic [31:0]        wExtdData;
+    (* keep = "true" *) logic       wID_WrEn_Reg;
+    (* keep = "true" *) pc_sel_e    wID_PcSel;
+    (* keep = "true" *) logic       wID_BranchEn;
+    (* keep = "true" *) logic       wID_MemValid;
+    (* keep = "true" *) logic       wID_MemWrEn;
+    (* keep = "true" *) logic       wID_CsrEn;
+    (* keep = "true" *) logic       wID_CsrWrEn;
+    (* keep = "true" *) logic       wID_CsrRdEn;
+    (* keep = "true" *) logic       wID_Mret;
+    (* keep = "true" *) logic       wID_Exc;
 
     // ID -> EX Registers
     logic [31:0]        rID_EX_Rs1;
@@ -143,6 +154,7 @@ module Datapath (
     logic [31:0]        wAluRs2; 
     logic [31:0]        wAluData;
     logic [31:0]        wBranchTarget;
+    logic [31:0]        wJalrTarget;
     logic               wTakeBranch;
 
     logic [31:0]        wAluRs1_Bypass;
@@ -246,7 +258,7 @@ module Datapath (
         .iPcSel        (rID_EX_PcSel),
         .iBchSel       (wBranchCond),
         .iBranchTarget (wBranchTarget),
-        .iJalrAddr     (wAluData),
+        .iJalrAddr     (wJalrTarget),
         .oPc           (wPc),
         .oPcPlus4      (wPcPlus4)
     );
@@ -306,7 +318,20 @@ module Datapath (
         .oExtdData  (wExtdData)
     );
 
-    assign oInstData = rIF_ID_InstData;
+    assign oInstData    = rIF_ID_InstData;
+
+    // Pre-gate ID stage control signals with rIF_ID_Valid (early signal)
+    // so late wID_EX_Flush only passes through 1 LUT stage before ID/EX FFs
+    assign wID_WrEn_Reg = rIF_ID_Valid && iWrEn_Reg;
+    assign wID_PcSel    = rIF_ID_Valid ? iPcSel : PC_NEXT;
+    assign wID_BranchEn = rIF_ID_Valid && iBranchEn;
+    assign wID_MemValid = rIF_ID_Valid && iMemValid;
+    assign wID_MemWrEn  = rIF_ID_Valid && iMemWrEn;
+    assign wID_CsrEn    = rIF_ID_Valid && iCsrEn;
+    assign wID_CsrWrEn  = rIF_ID_Valid && iCsrWrEn;
+    assign wID_CsrRdEn  = rIF_ID_Valid && iCsrRdEn;
+    assign wID_Mret     = rIF_ID_Valid && iIsMret;
+    assign wID_Exc      = rIF_ID_Valid && iIsException;
 
     /***********************************************
     // Hazard Unit & ID -> EX
@@ -419,17 +444,17 @@ module Datapath (
             begin
                 rID_EX_Rd         <= rIF_ID_InstData[11:7];
                 rID_EX_Valid      <= rIF_ID_Valid;
-                rID_EX_WrEn_Reg   <= rIF_ID_Valid && iWrEn_Reg;
+                rID_EX_WrEn_Reg   <= wID_WrEn_Reg;
                 rID_EX_WBSel      <= iWBSel;
-                rID_EX_PcSel      <= rIF_ID_Valid ? iPcSel : PC_NEXT;
-                rID_EX_BranchEn   <= rIF_ID_Valid && iBranchEn;
-                rID_EX_MemValid   <= rIF_ID_Valid && iMemValid;
-                rID_EX_MemWrEn    <= rIF_ID_Valid && iMemWrEn;
-                rID_EX_CsrEn      <= rIF_ID_Valid && iCsrEn;
-                rID_EX_CsrWrEn    <= rIF_ID_Valid && iCsrWrEn;
-                rID_EX_CsrRdEn    <= rIF_ID_Valid && iCsrRdEn;
-                rID_EX_Mret       <= rIF_ID_Valid && iIsMret;
-                rID_EX_Exc        <= rIF_ID_Valid && iIsException;
+                rID_EX_PcSel      <= wID_PcSel;
+                rID_EX_BranchEn   <= wID_BranchEn;
+                rID_EX_MemValid   <= wID_MemValid;
+                rID_EX_MemWrEn    <= wID_MemWrEn;
+                rID_EX_CsrEn      <= wID_CsrEn;
+                rID_EX_CsrWrEn    <= wID_CsrWrEn;
+                rID_EX_CsrRdEn    <= wID_CsrRdEn;
+                rID_EX_Mret       <= wID_Mret;
+                rID_EX_Exc        <= wID_Exc;
             end
         end                      
     end
@@ -522,8 +547,9 @@ module Datapath (
         .oBchSel    (wBranchCond)
     );
 
-    // Branch / Jump Target Adder (Using EX Stage PC + Imm)
+    // Branch / Jump Target Adders (Using EX Stage PC/Rs1 + Imm)
     assign wBranchTarget = rID_EX_PC + rID_EX_Imm;
+    assign wJalrTarget   = wAluRs1_Fwd + rID_EX_Imm;
 
     // Branch / Jump Occurrence Detection
     always_comb 

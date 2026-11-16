@@ -7,6 +7,7 @@
                       - mtime    : 0xBFF8 (low) / 0xBFFC (high)
  - Owner            : Hyunjae.Jung
  - Revision history : 1) 2026.11.10 : Initial release
+                      2) 2026.11.16 : Register oMtip output (rMtip) for STA timing
 **************************************************************/
 `timescale 1ns / 1ps
 
@@ -42,10 +43,11 @@ module Clint (
     logic [63:0] rMtime;
     logic [63:0] rMtimecmp;
     logic        rMsip;
+    logic        rMtip;
 
     // Interrupt output
     assign oMsip   = rMsip;
-    assign oMtip   = (rMtime >= rMtimecmp);
+    assign oMtip   = rMtip;
 
     // APB response : always ready, no error
     assign PREADY  = 1'b1;
@@ -59,10 +61,12 @@ module Clint (
             rMtime    <= 64'd0;
             rMtimecmp <= 64'hFFFF_FFFF_FFFF_FFFF;   // no timer interrupt after reset
             rMsip     <= 1'b0;
+            rMtip     <= 1'b0;
         end
         else
         begin
             rMtime <= rMtime + 64'd1;
+            rMtip  <= (rMtime >= rMtimecmp);
 
             if (PSEL && PENABLE && PWRITE)
             begin
