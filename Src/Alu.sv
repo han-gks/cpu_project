@@ -6,6 +6,7 @@
  - Revision history : 1) 2026.09.02 : Initial release
                       2) 2026.09.04 : Apply Enum for ALU Control
                       3) 2026.09.09 : Complete base type
+                      4) 2026.11.16 : Separate branch comparator inputs (iBchRs1/iBchRs2) for STA
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -19,6 +20,8 @@ module Alu (
     // Input Ports: Data
     input  logic [31:0] iRs1,
     input  logic [31:0] iRs2,
+    input  logic [31:0] iBchRs1,
+    input  logic [31:0] iBchRs2,
 
     // Output Ports: Control
     output logic        oBchSel,
@@ -51,12 +54,12 @@ module Alu (
         if(iBranchEn)
         begin
             case(iBranchCtrl)
-                BR_EQ  : oBchSel = (iRs1 == iRs2) ? 1'b1 : 1'b0;
-                BR_NE  : oBchSel = (iRs1 != iRs2) ? 1'b1 : 1'b0;
-                BR_LT  : oBchSel = ($signed(iRs1) <  $signed(iRs2)) ? 1'b1 : 1'b0;
-                BR_GE  : oBchSel = ($signed(iRs1) >= $signed(iRs2)) ? 1'b1 : 1'b0;
-                BR_LTU : oBchSel = (iRs1 <  iRs2) ? 1'b1 : 1'b0;
-                BR_GEU : oBchSel = (iRs1 >= iRs2) ? 1'b1 : 1'b0;
+                BR_EQ  : oBchSel = (iBchRs1 == iBchRs2) ? 1'b1 : 1'b0;
+                BR_NE  : oBchSel = (iBchRs1 != iBchRs2) ? 1'b1 : 1'b0;
+                BR_LT  : oBchSel = ($signed(iBchRs1) <  $signed(iBchRs2)) ? 1'b1 : 1'b0;
+                BR_GE  : oBchSel = ($signed(iBchRs1) >= $signed(iBchRs2)) ? 1'b1 : 1'b0;
+                BR_LTU : oBchSel = (iBchRs1 <  iBchRs2) ? 1'b1 : 1'b0;
+                BR_GEU : oBchSel = (iBchRs1 >= iBchRs2) ? 1'b1 : 1'b0;
                 default: oBchSel = 1'b0;
             endcase
         end

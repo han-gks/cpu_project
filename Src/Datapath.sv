@@ -16,6 +16,7 @@
                      17) 2026.11.11 : Integrate TrapController, 4-stage Valid/Flush, and CSR Trap ports
                      18) 2026.11.11 : Add APB Bus wait-state stall (iBusStall) support
                      19) 2026.11.16 : Optimize pipeline Flush/Stall structure (decouple Flush from CE & data payload) for STA
+                     20) 2026.11.16 : Connect forwarded operands (wAluRs1/2_Fwd) directly to ALU branch comparator for STA
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -512,6 +513,8 @@ module Datapath (
     Alu u_alu (
         .iRs1       (wAluRs1),
         .iRs2       (wAluRs2),
+        .iBchRs1    (wAluRs1_Fwd),
+        .iBchRs2    (wAluRs2_Fwd),
         .iAluCtrl   (rID_EX_AluCtrl),
         .iBranchEn  (rID_EX_BranchEn),
         .iBranchCtrl(rID_EX_BranchCtrl),
