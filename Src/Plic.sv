@@ -10,6 +10,7 @@
                       - claim     : 0x20_0004 (read : claim / write : complete)
  - Owner            : Hyunjae.Jung
  - Revision history : 1) 2026.11.11 : Initial release
+                      2) 2026.11.16 : Register oMeip output (rMeip) for STA timing
 **************************************************************/
 `timescale 1ns / 1ps
 
@@ -52,6 +53,7 @@ module Plic (
     logic [2:0] rPriority [1:4];
     logic [2:0] rThreshold;
     logic [3:0] rBusy;                  // gateway : block re-trigger until complete
+    logic       rMeip;
 
     logic [2:0] wClaimId;
     logic [2:0] wClaimPriority;
@@ -60,8 +62,8 @@ module Plic (
     assign PREADY  = 1'b1;
     assign PSLVERR = 1'b0;
 
-    // Interrupt output : highest pending source above threshold
-    assign oMeip   = (wClaimId != 3'd0) && (wClaimPriority > rThreshold);
+    // Interrupt output : registered highest pending source above threshold
+    assign oMeip   = rMeip;
 
     // Claim arbitration : highest priority among pending & enabled sources
     always_comb
@@ -87,6 +89,7 @@ module Plic (
             rEnable    <= 4'b0000;
             rBusy      <= 4'b0000;
             rThreshold <= 3'b000;
+            rMeip      <= 1'b0;
             for (int i = 0; i <= 3; i++)
             begin
                 rPriority[i] <= 3'b0;
@@ -94,6 +97,8 @@ module Plic (
         end
         else
         begin
+            rMeip <= (wClaimId != 3'd0) && (wClaimPriority > rThreshold);
+
             // Gateway : latch new request
             for (int i = 0; i <= 3; i++)
             begin
