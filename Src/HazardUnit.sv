@@ -8,6 +8,7 @@
                       3) 2026.10.31 : Add CSR stall/flush logic(CSR only in pipline)
                       4) 2026.11.11 : Add Trap flush logic
                       5) 2026.11.11 : Add APB Bus wait-state stall (iBusStall)
+                      6) 2026.11.16 : Decouple Load-Use from Branch and pre-compute early hazard flags for STA
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -48,6 +49,13 @@ module HazardUnit (
     logic   wLoadUseFlag;
     logic   wCsrStallFlag;
 
+    // Early hazard terms (independent of late iTakeBranch / wBranchCond)
+    (* keep = "true" *) logic wBranchValid;
+    (* keep = "true" *) logic wEarlyIF_ID_Flush;
+    (* keep = "true" *) logic wEarlyID_EX_Flush;
+    (* keep = "true" *) logic wEarlyPC_ForceStall;
+    (* keep = "true" *) logic wEarlyPC_DrainStall;
+
     // Load-use / CSR-use : result is ready only in WB -> stall 1 cycle, then MEM/WB forwarding
     assign wLoadUseFlag = ((iID_EX_WBSel == WB_MEM) || (iID_EX_WBSel == WB_CSR)) && 
                            ((iIF_ID_Rs1 == iID_EX_Rd) || (iIF_ID_Rs2 == iID_EX_Rd));
@@ -56,59 +64,43 @@ module HazardUnit (
                             (iEX_MEM_CsrEn == 1'b1) ||
                             (iMEM_WB_CsrEn == 1'b1)   ) ? 1'b1 : 1'b0;
 
-    // Priority: TrapBranch > BusStall > TrapFlush > Branch > Load-Use > CSR Stall / Trap Drain
+    // Pre-compute early conditions so late iTakeBranch only traverses 1 LUT stage
+    assign wBranchValid        = !iTrapBranch && !iBusStall && (iTrapFlush == 4'b0000) && !wLoadUseFlag;
+    assign wEarlyIF_ID_Flush   = iTrapBranch || (!iBusStall && ((iTrapFlush != 4'b0000) ? iTrapFlush[3] : (!wLoadUseFlag && (wCsrStallFlag || iTrapDrain))));
+    assign wEarlyID_EX_Flush   = iTrapBranch ? iTrapFlush[2] : (!iBusStall && ((iTrapFlush != 4'b0000) ? iTrapFlush[2] : wLoadUseFlag));
+    assign wEarlyPC_ForceStall = !iTrapBranch && (iBusStall || (iTrapFlush != 4'b0000) || wLoadUseFlag || wCsrStallFlag);
+    assign wEarlyPC_DrainStall = !iTrapBranch && iTrapDrain;
+
+    // Priority: TrapBranch > BusStall > TrapFlush > Load-Use > Branch > CSR Stall / Trap Drain
     always_comb
     begin
-        oIF_ID_Stall  = 1'b0;
-        oID_EX_Stall  = 1'b0;
-        oEX_MEM_Stall = 1'b0;
-        oMEM_WB_Stall = 1'b0;
+        // Stall signals (oIF_ID_Stall, oID_EX_Stall, oEX_MEM_Stall, oMEM_WB_Stall are independent of iTakeBranch)
+        oIF_ID_Stall  = !iTrapBranch && (iBusStall || ((iTrapFlush == 4'b0000) && wLoadUseFlag));
+        oID_EX_Stall  = !iTrapBranch && iBusStall;
+        oEX_MEM_Stall = !iTrapBranch && iBusStall;
+        oMEM_WB_Stall = !iTrapBranch && iBusStall;
 
-        oIF_ID_Flush  = 1'b0;
-        oID_EX_Flush  = 1'b0;
-        oEX_MEM_Flush = 1'b0;
-        oMEM_WB_Flush = 1'b0;
-        oPC_Stall     = 1'b0;
-
+        // EX/MEM and MEM/WB Flush (independent of iTakeBranch)
         if (iTrapBranch == 1'b1)
         begin
-            oIF_ID_Flush  = 1'b1;
-            oID_EX_Flush  = iTrapFlush[2];
             oEX_MEM_Flush = iTrapFlush[1];
             oMEM_WB_Flush = iTrapFlush[0];
         end
-        else if (iBusStall == 1'b1)
+        else if (!iBusStall && (iTrapFlush != 4'b0000))
         begin
-            oPC_Stall     = 1'b1;
-            oIF_ID_Stall  = 1'b1;
-            oID_EX_Stall  = 1'b1;
-            oEX_MEM_Stall = 1'b1;
-            oMEM_WB_Stall = 1'b1;
-        end
-        else if (iTrapFlush != 4'b0000)
-        begin
-            oIF_ID_Flush  = iTrapFlush[3];
-            oID_EX_Flush  = iTrapFlush[2];
             oEX_MEM_Flush = iTrapFlush[1];
             oMEM_WB_Flush = iTrapFlush[0];
-            oPC_Stall     = 1'b1;
         end
-        else if (iTakeBranch == 1'b1)
+        else
         begin
-            oIF_ID_Flush = 1'b1;
-            oID_EX_Flush = 1'b1;
+            oEX_MEM_Flush = 1'b0;
+            oMEM_WB_Flush = 1'b0;
         end
-        else if (wLoadUseFlag == 1'b1)
-        begin
-            oIF_ID_Stall = 1'b1;
-            oID_EX_Flush = 1'b1;
-            oPC_Stall    = 1'b1;
-        end
-        else if ((wCsrStallFlag == 1'b1) || (iTrapDrain == 1'b1))
-        begin
-            oPC_Stall    = 1'b1;
-            oIF_ID_Flush = 1'b1;
-        end
+
+        // Final 1-LUT combination with late iTakeBranch
+        oIF_ID_Flush  = wEarlyIF_ID_Flush   || (wBranchValid && iTakeBranch);
+        oID_EX_Flush  = wEarlyID_EX_Flush   || (wBranchValid && iTakeBranch);
+        oPC_Stall     = wEarlyPC_ForceStall || (wEarlyPC_DrainStall && !iTakeBranch);
     end
 
 endmodule

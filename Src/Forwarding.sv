@@ -4,6 +4,7 @@
  - Description      : 
  - Owner            : Daegyu.Han
  - Revision history : 1) 2026.10.18 : Initial release
+                      2) 2026.11.16 : Remove redundant Rd != 0 check (pre-masked in WbEn) for STA
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -28,12 +29,12 @@ module Forwarding (
     begin
         oFwdRs1_En  = 1'b0;
         oFwdRs1_Sel = 1'b0;
-        if((iID_EX_Rs1 == iEX_MEM_Rd) && (iEX_MEM_WbEn == 1'b1) && (iEX_MEM_Rd != 5'b0))
+        if((iID_EX_Rs1 == iEX_MEM_Rd) && (iEX_MEM_WbEn == 1'b1))
         begin
             oFwdRs1_En  = 1'b1;
             oFwdRs1_Sel = 1'b0;
         end
-        else if((iID_EX_Rs1 == iMEM_WB_Rd) && (iMEM_WB_WbEn == 1'b1) && (iMEM_WB_Rd != 5'b0))
+        else if((iID_EX_Rs1 == iMEM_WB_Rd) && (iMEM_WB_WbEn == 1'b1))
         begin
             oFwdRs1_En  = 1'b1;
             oFwdRs1_Sel = 1'b1;
@@ -45,12 +46,12 @@ module Forwarding (
     begin
         oFwdRs2_En  = 1'b0;
         oFwdRs2_Sel = 1'b0;
-        if((iID_EX_Rs2 == iEX_MEM_Rd) && (iEX_MEM_WbEn == 1'b1) && (iEX_MEM_Rd != 5'b0))
+        if((iID_EX_Rs2 == iEX_MEM_Rd) && (iEX_MEM_WbEn == 1'b1))
         begin
             oFwdRs2_En  = 1'b1;
             oFwdRs2_Sel = 1'b0;
         end
-        else if((iID_EX_Rs2 == iMEM_WB_Rd) && (iMEM_WB_WbEn == 1'b1) && (iMEM_WB_Rd != 5'b0))
+        else if((iID_EX_Rs2 == iMEM_WB_Rd) && (iMEM_WB_WbEn == 1'b1))
         begin
             oFwdRs2_En  = 1'b1;
             oFwdRs2_Sel = 1'b1;

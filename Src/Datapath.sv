@@ -18,6 +18,7 @@
                      19) 2026.11.16 : Optimize pipeline Flush/Stall structure (decouple Flush from CE & data payload) for STA
                      20) 2026.11.16 : Connect forwarded operands (wAluRs1/2_Fwd) directly to ALU branch comparator for STA
                      21) 2026.11.16 : Separate JALR target adder (wJalrTarget) and pre-gate ID control signals for STA
+                     22) 2026.11.16 : Mask wID_WrEn_Reg when Rd == x0 to simplify Forwarding comparator for STA
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -322,7 +323,7 @@ module Datapath (
 
     // Pre-gate ID stage control signals with rIF_ID_Valid (early signal)
     // so late wID_EX_Flush only passes through 1 LUT stage before ID/EX FFs
-    assign wID_WrEn_Reg = rIF_ID_Valid && iWrEn_Reg;
+    assign wID_WrEn_Reg = rIF_ID_Valid && iWrEn_Reg && (rIF_ID_InstData[11:7] != 5'b0);
     assign wID_PcSel    = rIF_ID_Valid ? iPcSel : PC_NEXT;
     assign wID_BranchEn = rIF_ID_Valid && iBranchEn;
     assign wID_MemValid = rIF_ID_Valid && iMemValid;
