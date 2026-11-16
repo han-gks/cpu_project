@@ -15,6 +15,7 @@
                      16) 2026.11.08 : Add WB trap metadata, trap-handler interfaces
                      17) 2026.11.11 : Integrate TrapController, 4-stage Valid/Flush, and CSR Trap ports
                      18) 2026.11.11 : Add APB Bus wait-state stall (iBusStall) support
+                     19) 2026.11.16 : Optimize pipeline Flush/Stall structure (decouple Flush from CE & data payload) for STA
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -263,19 +264,21 @@ module Datapath (
             rIF_ID_PCPlus4  <= 32'b0;
             rIF_ID_Valid    <= 1'b0;
         end 
-        else if (wIF_ID_Flush)
-        begin
-            rIF_ID_InstData <= 32'h0000_0013;
-            rIF_ID_PC       <= 32'b0;
-            rIF_ID_PCPlus4  <= 32'b0;
-            rIF_ID_Valid    <= 1'b0;
-        end
         else if (!wIF_ID_Stall)
         begin
-            rIF_ID_InstData <= iInstData;
             rIF_ID_PC       <= wPc;
             rIF_ID_PCPlus4  <= wPcPlus4;
-            rIF_ID_Valid    <= 1'b1;
+
+            if (wIF_ID_Flush)
+            begin
+                rIF_ID_InstData <= 32'h0000_0013;
+                rIF_ID_Valid    <= 1'b0;
+            end
+            else
+            begin
+                rIF_ID_InstData <= iInstData;
+                rIF_ID_Valid    <= 1'b1;
+            end
         end
     end
 
@@ -374,73 +377,59 @@ module Datapath (
             rID_EX_Exc        <= 1'b0;
             rID_EX_Cause      <= EXC_INST_ADDR_MISALIGNED;
         end
-        else if (wID_EX_Flush)
-        begin
-            rID_EX_Rs1        <= 32'b0;
-            rID_EX_Rs2        <= 32'b0;
-            rID_EX_Imm        <= 32'b0;
-            rID_EX_PC         <= 32'b0;
-            rID_EX_PCPlus4    <= 32'b0;
-            rID_EX_Rd         <= 5'b0;
-            rID_EX_Rs1Addr    <= 5'b0;
-            rID_EX_Rs2Addr    <= 5'b0;
-            rID_EX_Valid      <= 1'b0;
-            rID_EX_WrEn_Reg   <= 1'b0;
-            rID_EX_WBSel      <= WB_ALU;
-            rID_EX_AluCtrl    <= ALU_ADD;
-            rID_EX_AluSrc1    <= ALU_SRC1_RS1;
-            rID_EX_AluSrc2    <= ALU_SRC2_RS2;
-            rID_EX_PcSel      <= PC_NEXT;
-            rID_EX_BranchEn   <= 1'b0;
-            rID_EX_BranchCtrl <= BR_EQ;
-            rID_EX_MemValid   <= 1'b0;
-            rID_EX_MemWrEn    <= 1'b0;
-            rID_EX_MemByteSel <= WORD;
-            // CSR & Trap
-            rID_EX_CsrAddr    <= 12'b0;
-            rID_EX_CsrCtrl    <= CSR_WRITE;
-            rID_EX_CsrEn      <= 1'b0;
-            rID_EX_CsrWrEn    <= 1'b0;
-            rID_EX_CsrRdEn    <= 1'b0;
-            rID_EX_CsrImmSel  <= 1'b0;
-            rID_EX_Mret       <= 1'b0;
-            rID_EX_Exc        <= 1'b0;
-            rID_EX_Cause      <= EXC_INST_ADDR_MISALIGNED;
-        end
         else if (!wID_EX_Stall)
         begin
-            // Data
+            // Data & non-side-effect selectors (decoupled from Flush)
             rID_EX_Rs1        <= wRdData1;
             rID_EX_Rs2        <= wRdData2;
             rID_EX_Imm        <= wExtdData;
             rID_EX_PC         <= rIF_ID_PC;
             rID_EX_PCPlus4    <= rIF_ID_PCPlus4;
-            rID_EX_Rd         <= rIF_ID_InstData[11:7];
             rID_EX_Rs1Addr    <= rIF_ID_InstData[19:15];
             rID_EX_Rs2Addr    <= rIF_ID_InstData[24:20];
-            // Ctrl
-            rID_EX_Valid      <= rIF_ID_Valid;
-            rID_EX_WrEn_Reg   <= rIF_ID_Valid && iWrEn_Reg;
-            rID_EX_WBSel      <= iWBSel;
             rID_EX_AluCtrl    <= iAluCtrl;
             rID_EX_AluSrc1    <= iAluSrc1;
             rID_EX_AluSrc2    <= iAluSrc2;
-            rID_EX_PcSel      <= rIF_ID_Valid ? iPcSel : PC_NEXT;
-            rID_EX_BranchEn   <= rIF_ID_Valid && iBranchEn;
             rID_EX_BranchCtrl <= iBranchCtrl;
-            rID_EX_MemValid   <= rIF_ID_Valid && iMemValid;
-            rID_EX_MemWrEn    <= rIF_ID_Valid && iMemWrEn;
             rID_EX_MemByteSel <= iMemByteSel;
-            // CSR & Trap
             rID_EX_CsrAddr    <= rIF_ID_InstData[31:20];
             rID_EX_CsrCtrl    <= iCsrCtrl;
-            rID_EX_CsrEn      <= rIF_ID_Valid && iCsrEn;
-            rID_EX_CsrWrEn    <= rIF_ID_Valid && iCsrWrEn;
-            rID_EX_CsrRdEn    <= rIF_ID_Valid && iCsrRdEn;
             rID_EX_CsrImmSel  <= iCsrImmSel;
-            rID_EX_Mret       <= rIF_ID_Valid && iIsMret;
-            rID_EX_Exc        <= rIF_ID_Valid && iIsException;
             rID_EX_Cause      <= iExceptionCause;
+
+            // Side-effect & hazard control signals
+            if (wID_EX_Flush)
+            begin
+                rID_EX_Rd         <= 5'b0;
+                rID_EX_Valid      <= 1'b0;
+                rID_EX_WrEn_Reg   <= 1'b0;
+                rID_EX_WBSel      <= WB_ALU;
+                rID_EX_PcSel      <= PC_NEXT;
+                rID_EX_BranchEn   <= 1'b0;
+                rID_EX_MemValid   <= 1'b0;
+                rID_EX_MemWrEn    <= 1'b0;
+                rID_EX_CsrEn      <= 1'b0;
+                rID_EX_CsrWrEn    <= 1'b0;
+                rID_EX_CsrRdEn    <= 1'b0;
+                rID_EX_Mret       <= 1'b0;
+                rID_EX_Exc        <= 1'b0;
+            end
+            else
+            begin
+                rID_EX_Rd         <= rIF_ID_InstData[11:7];
+                rID_EX_Valid      <= rIF_ID_Valid;
+                rID_EX_WrEn_Reg   <= rIF_ID_Valid && iWrEn_Reg;
+                rID_EX_WBSel      <= iWBSel;
+                rID_EX_PcSel      <= rIF_ID_Valid ? iPcSel : PC_NEXT;
+                rID_EX_BranchEn   <= rIF_ID_Valid && iBranchEn;
+                rID_EX_MemValid   <= rIF_ID_Valid && iMemValid;
+                rID_EX_MemWrEn    <= rIF_ID_Valid && iMemWrEn;
+                rID_EX_CsrEn      <= rIF_ID_Valid && iCsrEn;
+                rID_EX_CsrWrEn    <= rIF_ID_Valid && iCsrWrEn;
+                rID_EX_CsrRdEn    <= rIF_ID_Valid && iCsrRdEn;
+                rID_EX_Mret       <= rIF_ID_Valid && iIsMret;
+                rID_EX_Exc        <= rIF_ID_Valid && iIsException;
+            end
         end                      
     end
 
@@ -587,58 +576,50 @@ module Datapath (
             rEX_MEM_Exc        <= 1'b0;
             rEX_MEM_Cause      <= EXC_INST_ADDR_MISALIGNED;
         end 
-        else if (wEX_MEM_Flush)
-        begin
-            rEX_MEM_AluData    <= 32'b0;
-            rEX_MEM_RdData2    <= 32'b0;
-            rEX_MEM_PC         <= 32'b0;
-            rEX_MEM_PCPlus4    <= 32'b0;
-            rEX_MEM_Rd         <= 5'b0;
-            rEX_MEM_Valid      <= 1'b0;
-            rEX_MEM_WrEn_Reg   <= 1'b0;
-            rEX_MEM_WBSel      <= WB_ALU;
-            rEX_MEM_MemValid   <= 1'b0;
-            rEX_MEM_MemWrEn    <= 1'b0;
-            rEX_MEM_MemByteSel <= WORD;
-            rEX_MEM_CsrCtrl    <= CSR_WRITE;
-            rEX_MEM_CsrAddr    <= 12'b0;
-            rEX_MEM_CsrEn      <= 1'b0;
-            rEX_MEM_CsrWrEn    <= 1'b0;
-            rEX_MEM_CsrRdEn    <= 1'b0;
-            rEX_MEM_CsrImmSel  <= 1'b0;
-            rEX_MEM_Imm        <= 32'b0; 
-            rEX_MEM_CsrSrc     <= 32'b0;
-            rEX_MEM_Mret       <= 1'b0;
-            rEX_MEM_Exc        <= 1'b0;
-            rEX_MEM_Cause      <= EXC_INST_ADDR_MISALIGNED;
-        end
         else if (!wEX_MEM_Stall)
         begin
-            // Data
+            // Data & non-side-effect selectors (decoupled from Flush)
             rEX_MEM_AluData    <= wAluData;
             rEX_MEM_RdData2    <= wAluRs2_Fwd;
             rEX_MEM_PC         <= rID_EX_PC;
             rEX_MEM_PCPlus4    <= rID_EX_PCPlus4;
-            rEX_MEM_Rd         <= rID_EX_Rd;
-            // Ctrl
-            rEX_MEM_Valid      <= rID_EX_Valid;
-            rEX_MEM_WrEn_Reg   <= rID_EX_WrEn_Reg;
-            rEX_MEM_WBSel      <= rID_EX_WBSel; 
-            rEX_MEM_MemValid   <= rID_EX_MemValid;
-            rEX_MEM_MemWrEn    <= rID_EX_MemWrEn;
             rEX_MEM_MemByteSel <= rID_EX_MemByteSel;
-            // CSR & Trap
             rEX_MEM_CsrAddr    <= rID_EX_CsrAddr;
             rEX_MEM_CsrCtrl    <= rID_EX_CsrCtrl;              
-            rEX_MEM_CsrEn      <= rID_EX_CsrEn;              
-            rEX_MEM_CsrWrEn    <= rID_EX_CsrWrEn;            
-            rEX_MEM_CsrRdEn    <= rID_EX_CsrRdEn;          
             rEX_MEM_CsrImmSel  <= rID_EX_CsrImmSel; 
             rEX_MEM_CsrSrc     <= wAluRs1_Fwd;
             rEX_MEM_Imm        <= rID_EX_Imm;
-            rEX_MEM_Mret       <= rID_EX_Mret;
-            rEX_MEM_Exc        <= rID_EX_Exc;
             rEX_MEM_Cause      <= rID_EX_Cause;
+
+            // Side-effect & hazard control signals
+            if (wEX_MEM_Flush)
+            begin
+                rEX_MEM_Rd         <= 5'b0;
+                rEX_MEM_Valid      <= 1'b0;
+                rEX_MEM_WrEn_Reg   <= 1'b0;
+                rEX_MEM_WBSel      <= WB_ALU;
+                rEX_MEM_MemValid   <= 1'b0;
+                rEX_MEM_MemWrEn    <= 1'b0;
+                rEX_MEM_CsrEn      <= 1'b0;
+                rEX_MEM_CsrWrEn    <= 1'b0;
+                rEX_MEM_CsrRdEn    <= 1'b0;
+                rEX_MEM_Mret       <= 1'b0;
+                rEX_MEM_Exc        <= 1'b0;
+            end
+            else
+            begin
+                rEX_MEM_Rd         <= rID_EX_Rd;
+                rEX_MEM_Valid      <= rID_EX_Valid;
+                rEX_MEM_WrEn_Reg   <= rID_EX_WrEn_Reg;
+                rEX_MEM_WBSel      <= rID_EX_WBSel; 
+                rEX_MEM_MemValid   <= rID_EX_MemValid;
+                rEX_MEM_MemWrEn    <= rID_EX_MemWrEn;
+                rEX_MEM_CsrEn      <= rID_EX_CsrEn;              
+                rEX_MEM_CsrWrEn    <= rID_EX_CsrWrEn;            
+                rEX_MEM_CsrRdEn    <= rID_EX_CsrRdEn;          
+                rEX_MEM_Mret       <= rID_EX_Mret;
+                rEX_MEM_Exc        <= rID_EX_Exc;
+            end
         end
     end
    
@@ -681,52 +662,44 @@ module Datapath (
             rMEM_WB_Exc       <= 1'b0;
             rMEM_WB_Cause     <= EXC_INST_ADDR_MISALIGNED;
         end 
-        else if (wMEM_WB_Flush)
-        begin
-            rMEM_WB_AluData   <= 32'b0;
-            rMEM_WB_MemRdData <= 32'b0;
-            rMEM_WB_PC        <= 32'b0;
-            rMEM_WB_PCPlus4   <= 32'b0;
-            rMEM_WB_Rd        <= 5'b0;
-            rMEM_WB_Valid     <= 1'b0;
-            rMEM_WB_WrEn_Reg  <= 1'b0;
-            rMEM_WB_WBSel     <= WB_ALU;
-            rMEM_WB_CsrCtrl   <= CSR_WRITE;
-            rMEM_WB_CsrAddr   <= 12'b0;
-            rMEM_WB_CsrEn     <= 1'b0;
-            rMEM_WB_CsrWrEn   <= 1'b0;
-            rMEM_WB_CsrRdEn   <= 1'b0;
-            rMEM_WB_CsrImmSel <= 1'b0;
-            rMEM_WB_CsrSrc    <= 32'b0;
-            rMEM_WB_Imm       <= 32'b0;
-            rMEM_WB_Mret      <= 1'b0;
-            rMEM_WB_Exc       <= 1'b0;
-            rMEM_WB_Cause     <= EXC_INST_ADDR_MISALIGNED;
-        end
         else if (!wMEM_WB_Stall)
         begin
-            // Data
+            // Data & non-side-effect selectors (decoupled from Flush)
             rMEM_WB_AluData   <= rEX_MEM_AluData;
             rMEM_WB_MemRdData <= iMemRdData;
             rMEM_WB_PC        <= rEX_MEM_PC;
             rMEM_WB_PCPlus4   <= rEX_MEM_PCPlus4;
-            rMEM_WB_Rd        <= rEX_MEM_Rd;
-            // Ctrl
-            rMEM_WB_Valid     <= rEX_MEM_Valid;
-            rMEM_WB_WrEn_Reg  <= rEX_MEM_WrEn_Reg;
             rMEM_WB_WBSel     <= rEX_MEM_WBSel; 
-            // CSR & Trap
             rMEM_WB_CsrAddr   <= rEX_MEM_CsrAddr;
             rMEM_WB_CsrCtrl   <= rEX_MEM_CsrCtrl;              
-            rMEM_WB_CsrEn     <= rEX_MEM_CsrEn;              
-            rMEM_WB_CsrWrEn   <= rEX_MEM_CsrWrEn;            
-            rMEM_WB_CsrRdEn   <= rEX_MEM_CsrRdEn;          
             rMEM_WB_CsrImmSel <= rEX_MEM_CsrImmSel; 
             rMEM_WB_Imm       <= rEX_MEM_Imm;
             rMEM_WB_CsrSrc    <= rEX_MEM_CsrSrc;
-            rMEM_WB_Mret      <= rEX_MEM_Mret;
-            rMEM_WB_Exc       <= rEX_MEM_Exc;
             rMEM_WB_Cause     <= rEX_MEM_Cause;
+
+            // Side-effect & hazard control signals
+            if (wMEM_WB_Flush)
+            begin
+                rMEM_WB_Rd        <= 5'b0;
+                rMEM_WB_Valid     <= 1'b0;
+                rMEM_WB_WrEn_Reg  <= 1'b0;
+                rMEM_WB_CsrEn     <= 1'b0;
+                rMEM_WB_CsrWrEn   <= 1'b0;
+                rMEM_WB_CsrRdEn   <= 1'b0;
+                rMEM_WB_Mret      <= 1'b0;
+                rMEM_WB_Exc       <= 1'b0;
+            end
+            else
+            begin
+                rMEM_WB_Rd        <= rEX_MEM_Rd;
+                rMEM_WB_Valid     <= rEX_MEM_Valid;
+                rMEM_WB_WrEn_Reg  <= rEX_MEM_WrEn_Reg;
+                rMEM_WB_CsrEn     <= rEX_MEM_CsrEn;              
+                rMEM_WB_CsrWrEn   <= rEX_MEM_CsrWrEn;            
+                rMEM_WB_CsrRdEn   <= rEX_MEM_CsrRdEn;          
+                rMEM_WB_Mret      <= rEX_MEM_Mret;
+                rMEM_WB_Exc       <= rEX_MEM_Exc;
+            end
         end
     end
 
