@@ -9,6 +9,7 @@
                       4) 2026.11.11 : Add Trap flush logic
                       5) 2026.11.11 : Add APB Bus wait-state stall (iBusStall)
                       6) 2026.11.16 : Decouple Load-Use from Branch and pre-compute early hazard flags for STA
+                      7) 2026.11.18 : [Bug FIX] Move wCsrStallFlag to wEarlyPC_DrainStall so iTakeBranch overrides CSR stall
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -68,8 +69,8 @@ module HazardUnit (
     assign wBranchValid        = !iTrapBranch && !iBusStall && (iTrapFlush == 4'b0000) && !wLoadUseFlag;
     assign wEarlyIF_ID_Flush   = iTrapBranch || (!iBusStall && ((iTrapFlush != 4'b0000) ? iTrapFlush[3] : (!wLoadUseFlag && (wCsrStallFlag || iTrapDrain))));
     assign wEarlyID_EX_Flush   = iTrapBranch ? iTrapFlush[2] : (!iBusStall && ((iTrapFlush != 4'b0000) ? iTrapFlush[2] : wLoadUseFlag));
-    assign wEarlyPC_ForceStall = !iTrapBranch && (iBusStall || (iTrapFlush != 4'b0000) || wLoadUseFlag || wCsrStallFlag);
-    assign wEarlyPC_DrainStall = !iTrapBranch && iTrapDrain;
+    assign wEarlyPC_ForceStall = !iTrapBranch && (iBusStall || (iTrapFlush != 4'b0000) || wLoadUseFlag);
+    assign wEarlyPC_DrainStall = !iTrapBranch && (wCsrStallFlag || iTrapDrain);
 
     // Priority: TrapBranch > BusStall > TrapFlush > Load-Use > Branch > CSR Stall / Trap Drain
     always_comb
