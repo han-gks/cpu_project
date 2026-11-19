@@ -10,6 +10,7 @@
                       5) 2026.11.11 : Add APB Bus wait-state stall (iBusStall)
                       6) 2026.11.16 : Decouple Load-Use from Branch and pre-compute early hazard flags for STA
                       7) 2026.11.18 : [Bug FIX] Move wCsrStallFlag to wEarlyPC_DrainStall so iTakeBranch overrides CSR stall
+                      8) 2026.11.19 : Refactor early hazard equations into readable if-else priority block
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -51,11 +52,11 @@ module HazardUnit (
     logic   wCsrStallFlag;
 
     // Early hazard terms (independent of late iTakeBranch / wBranchCond)
-    logic wBranchValid;
-    logic wEarlyIF_ID_Flush;
-    logic wEarlyID_EX_Flush;
-    logic wEarlyPC_ForceStall;
-    logic wEarlyPC_DrainStall;
+    (* keep = "true" *) logic wBranchValid;
+    (* keep = "true" *) logic wEarlyIF_ID_Flush;
+    (* keep = "true" *) logic wEarlyID_EX_Flush;
+    (* keep = "true" *) logic wEarlyPC_ForceStall;
+    (* keep = "true" *) logic wEarlyPC_DrainStall;
 
     // Load-use / CSR-use : result is ready only in WB -> stall 1 cycle, then MEM/WB forwarding
     assign wLoadUseFlag = ((iID_EX_WBSel == WB_MEM) || (iID_EX_WBSel == WB_CSR)) && 
@@ -65,7 +66,7 @@ module HazardUnit (
                             (iEX_MEM_CsrEn == 1'b1) ||
                             (iMEM_WB_CsrEn == 1'b1)   ) ? 1'b1 : 1'b0;
 
-    // [1단계] 느린 iTakeBranch를 제외한 빠른 신호들만으로 if - else if 우선순위 사전 계산
+    // Step 1: Pre-compute early hazard priority terms (excluding late iTakeBranch)
     // Priority: TrapBranch > BusStall > TrapFlush > Load-Use > (Branch) > CSR Stall / Trap Drain
     always_comb
     begin
@@ -123,7 +124,7 @@ module HazardUnit (
         end
     end
 
-    // [2단계] 가장 늦게 도착하는 iTakeBranch와 마지막 1단 LUT로 최종 결합
+    // Step 2: Final 1-LUT combination with late iTakeBranch
     assign oIF_ID_Flush = wEarlyIF_ID_Flush   || (wBranchValid && iTakeBranch);
     assign oID_EX_Flush = wEarlyID_EX_Flush   || (wBranchValid && iTakeBranch);
     assign oPC_Stall    = wEarlyPC_ForceStall || (wEarlyPC_DrainStall && !iTakeBranch);
