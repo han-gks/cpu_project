@@ -52,11 +52,11 @@ module HazardUnit (
     logic   wCsrStallFlag;
 
     // Early hazard terms (independent of late iTakeBranch / wBranchCond)
-    (* keep = "true" *) logic wBranchValid;
-    (* keep = "true" *) logic wEarlyIF_ID_Flush;
-    (* keep = "true" *) logic wEarlyID_EX_Flush;
-    (* keep = "true" *) logic wEarlyPC_ForceStall;
-    (* keep = "true" *) logic wEarlyPC_DrainStall;
+    logic wBranchValid;
+    logic wEarlyIF_ID_Flush;
+    logic wEarlyID_EX_Flush;
+    logic wEarlyPC_ForceStall;
+    logic wEarlyPC_DrainStall;
 
     // Load-use / CSR-use : result is ready only in WB -> stall 1 cycle, then MEM/WB forwarding
     assign wLoadUseFlag = ((iID_EX_WBSel == WB_MEM) || (iID_EX_WBSel == WB_CSR)) && 
