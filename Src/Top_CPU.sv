@@ -20,6 +20,8 @@
                                       Apb_Interconnect, Clint, and Plic
                       4) 2026.11.11 : Integrate GPI, GPO, GPIO, Apb_Uart,
                                       PLIC IRQ wiring, and wBusStall
+                      5) 2026.11.19 : Align wPlicIrq [4:1] indexing with PLIC
+                                      interrupt source IDs (ID 1 ~ 4)
 **************************************************************/
 `timescale 1ns / 1ps
 import Cpu_h::*;
@@ -74,13 +76,14 @@ module Top_CPU (
     logic        wMip_MTIP;
     logic        wMip_MSIP;
     logic        wUartIrq;
-    logic [ 3:0] wPlicIrq;
+    logic [ 4:1] wPlicIrq;
 
-    // Map peripheral & external interrupt sources to PLIC inputs:
+    // Map peripheral & external interrupt sources to PLIC inputs (RISC-V PLIC IDs 1 ~ 4; ID 0 is reserved):
     //   ID 1 (wPlicIrq[1]) : UART RX FIFO non-empty interrupt
     //   ID 2 (wPlicIrq[2]) : GPI input activity
     //   ID 3 (wPlicIrq[3]) : External Button IRQ (iBtnIrq)
-    assign wPlicIrq = {iBtnIrq, (|iGpiData), wUartIrq, iBtnIrq};
+    //   ID 4 (wPlicIrq[4]) : Unused (tied to 1'b0)
+    assign wPlicIrq = {1'b0, iBtnIrq, (|iGpiData), wUartIrq};
 
     // -------------------------------------------------------------------------
     // 4. MemDecoder <-> DataMem (Bypass @ 0x8000_0000) Wires
